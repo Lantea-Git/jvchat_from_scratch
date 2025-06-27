@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name           JVChat Premium
 // @description    Outil de discussion instantanée pour les forums de Jeuxvideo.com
-// @author         Blaff
+// @author         Blaff, Rand0max, Atlantis
 // @namespace      JVChatPremium
 // @license        MIT
-// @version        0.1.108
+// @version        0.1.109.v023
 // @match          http://*.jeuxvideo.com/forums/42-*
 // @match          https://*.jeuxvideo.com/forums/42-*
 // @match          http://*.jeuxvideo.com/forums/1-*
@@ -77,7 +77,7 @@ header.jv-header-menu,
 .bloc-pagi-default,
 .bloc-outils-top,
 .bloc-outils-bottom,
-.option-previsu,
+.buttonsEditor__groupPreview,
 .ads,
 .sondage-fofo,
 #dfp_pulse,
@@ -86,7 +86,9 @@ header.jv-header-menu,
 .nu-context-menu,
 .message-lock-topic,
 #bloc-formulaire-forum .alert,
-.form-post-message > .row > div:nth-child(2),
+.postMessage,
+#forums-post-message-editor > form > div:nth-child(2),
+.forums-post-message-editor > .row > div:nth-child(2),
 .conteneur-messages-pagi > a:last-of-type,
 #bloc-meta-titre-jeu,
 .gameHeaderBanner,
@@ -104,6 +106,7 @@ header.jv-header-menu,
 .layout__contentAside,
 .layout__footer,
 .layout__contentTop,
+.messageEditor__topInfo,
 .header
 {
     display: none!important;
@@ -151,13 +154,19 @@ body {
     margin: 0;
 }
 
-.jv-editor > .conteneur-editor {
+.messageEditor__containerEdit {
     background-color: var(--jv-bg-color);
+    border: unset;
+    box-shadow: none;
 }
 
 .jv-editor > .conteneur-editor > .text-editor {
     border: 0;
     display: flex!important;
+}
+
+.messageEditor__buttonEdit {
+    background-color: inherit !important;
 }
 
 #jvchat-alerts {
@@ -271,12 +280,13 @@ label {
 
 .jvchat-reduced #message_topic {
     padding: 0.3rem;
-    height: 1.7rem;
+    height: 1.7rem !important;
     max-height: 6.5rem;
     overflow: auto;
 }
 
-.jvchat-reduced .jv-editor .conteneur-editor > * {
+
+.jvchat-reduced #forums-post-message-editor .messageEditor__containerEdit > *:not(.messageEditor__edit, #jvchat-buttons-main) {
     display: none;
 }
 
@@ -316,6 +326,10 @@ label {
     color: gray;
 }
 
+#bloc-formulaire-forum .jvchat-buttons button {
+    background: var(--jv-input-bg-color);
+}
+
 .jvchat-buttons .jvchat-button-solo {
     border-radius: 0 0.3rem 0.3rem 0;
 }
@@ -334,10 +348,16 @@ label {
     border: 0.0625rem solid #BEBECC!important;
     border-right-width: 0!important;
     color: inherit!important;
+    background-color: var(--jv-input-bg-color);
+    height : 8.6em !important;
 }
 
 .jvchat-buttons button:hover {
     background: lightgray;
+    color: black;
+}
+#bloc-formulaire-forum .jvchat-buttons button:hover {
+    background: var(--jv-border-color);
     color: black;
 }
 
@@ -917,18 +937,26 @@ hr.jvchat-ruler:first-of-type {
     scrollbar-color: #191A1C #2F3136!important;
 }
 
+.jvchat-night-mode .messageEditor__edit {
+    color: #dcddde!important; 
+}
+
 .jvchat-night-mode .jvchat-ruler {
     border-color: #2e3035!important;
     border-top: 1px solid transparent !important;
 }
 
-.jvchat-night-mode .conteneur-editor,
+/* .jvchat-night-mode .conteneur-editor, */
+.jvchat-night-mode .messageEditor__buttonEdit,
+.jvchat-night-mode .messageEditor__containerEdit,
 .jvchat-night-mode .bloc-editor-forum,
 .jvchat-night-mode .jvchat-bloc-message,
 .jvchat-night-mode .conteneur-messages-pagi {
     background-color: #36393F!important;
 }
 
+
+.jvchat-night-mode .messageEditor__topInfo,
 .jvchat-night-mode #message_topic,
 .jvchat-night-mode .btn-group {
     background: #484C52!important;
@@ -1043,6 +1071,23 @@ hr.jvchat-ruler:first-of-type {
 #jvchat-leftbar-extend::before {
     content: "\uEA88";
     font-family: "jvchat-icons";
+}
+
+/* Revert CSS Respawn 2 for blaff UI*/
+.messageEditor__containerEdit {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    border-radius : 0 !important;
+    margin-bottom: 0 !important;
+}
+#bloc-formulaire-forum {
+    margin: 0 5px 5px 5px !important;
+}
+.messageEditor__containerEdit > *:not(.messageEditor__edit):not(#jvchat-buttons-main) {
+    grid-column: 1 / -1;
+}
+.jvchat-reduced #message_topic {
+    min-height: 2.4em;
 }
 
 
@@ -1345,7 +1390,8 @@ function toggleTextarea() {
     saveConfig();
 
     let isDown = isScrollDown();
-    document.getElementById("bloc-formulaire-forum").getElementsByClassName("jv-editor-toolbar")[0].classList.toggle("jvchat-hide");
+    //document.getElementById("bloc-formulaire-forum").getElementsByClassName("jv-editor-toolbar")[0].classList.toggle("jvchat-hide");
+    document.getElementById("bloc-formulaire-forum").getElementsByClassName("messageEditor__buttonEdit")[0].classList.toggle("jvchat-hide");
     document.getElementById("jvchat-enlarge").classList.toggle("jvchat-hide");
     document.getElementById("jvchat-reduce").classList.toggle("jvchat-hide");
     document.getElementById("jvchat-post").classList.toggle("jvchat-hide");
@@ -1553,7 +1599,8 @@ function clearPage(document) {
 
     document.head.insertAdjacentHTML("beforeend", CSS);
 
-    let previsu = document.getElementById("bloc-formulaire-forum").getElementsByClassName("previsu-editor")[0];
+    //let previsu = document.getElementById("bloc-formulaire-forum").getElementsByClassName("previsu-editor")[0];
+    let previsu = document.getElementById("bloc-formulaire-forum").getElementsByClassName("messageEditor__containerPreview")[0];
     if (previsu) {
         previsu.parentElement.removeChild(previsu);
     }
@@ -1563,6 +1610,10 @@ function clearPage(document) {
         messageTopic.classList.add("jvchat-textarea");
         messageTopic.setAttribute("placeholder", "Hop hop hop, le message ne va pas s'écrire tout seul !");
         messageTopic.insertAdjacentHTML("afterend", buttons);
+        //dezzomer_conflit_css_order
+        const order = getComputedStyle(messageTopic).order;
+        if (order !== "0") {  document.getElementById("jvchat-buttons-main").style.order = order; }
+        //fin_dezzomer_conflit
         messageTopic.addEventListener("keydown", tryCatch(postMessageIfEnter));
         document.getElementById("jvchat-post").addEventListener("click", tryCatch(postMessage));
         document.getElementById("jvchat-enlarge").addEventListener("click", tryCatch(toggleTextarea));
@@ -1579,7 +1630,8 @@ function clearPage(document) {
     document.getElementById("bloc-formulaire-forum").classList.add("jvchat-reduced");
     document.getElementById("bloc-formulaire-forum").classList.add("jvchat-hide");
 
-    let toolbar = document.getElementById("bloc-formulaire-forum").getElementsByClassName("jv-editor-toolbar")[0];
+    //let toolbar = document.getElementById("bloc-formulaire-forum").getElementsByClassName("jv-editor-toolbar")[0];
+    let toolbar = document.getElementById("bloc-formulaire-forum").getElementsByClassName("messageEditor__buttonEdit")[0];
     if (toolbar) {
         toolbar.classList.add("jvchat-hide");
     }
@@ -1829,7 +1881,8 @@ function postMessage() {
         textarea.removeAttribute("disabled");
         let parsedPage = parsePage(res, timestamp);
         if (!parsedPage.alert) {
-            textarea.value = "";
+            //textarea.value = "";
+            reactareatext(textarea, '');
         }
         setTextareaHeight();
         setScrollDown();
@@ -2674,7 +2727,7 @@ function scheduleDegradedRefreshWarning() {
                 break;
             }
         }
-        for (i = 0; i < nbClean; i++) {
+        for (let i = 0; i < nbClean; i++) {
             timeoutedDates.shift();
         }
 
@@ -3301,7 +3354,9 @@ function insertAtCursor(input, textToInsert) {
     const value = input.value;
     const start = input.selectionStart;
     const end = input.selectionEnd;
-    input.value = value.slice(0, start) + textToInsert + value.slice(end);
+    //input.value = value.slice(0, start) + textToInsert + value.slice(end);
+    const newText = value.slice(0, start) + textToInsert + value.slice(end);
+    reactareatext(input, newText);
     input.selectionStart = input.selectionEnd = start + textToInsert.length;
 }
 
@@ -3373,6 +3428,13 @@ function setScrollDown() {
 function main() {
     addJVChatButton(document);
     bindJVChatButton(document);
+}
+
+function reactareatext(textarea, value) {
+    const prototype = Object.getPrototypeOf(textarea);
+    const nativeSetter = Object.getOwnPropertyDescriptor(prototype, 'value').set;
+    nativeSetter.call(textarea, value);
+    textarea.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
 main();
