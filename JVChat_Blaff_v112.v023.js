@@ -4,7 +4,7 @@
 // @author         Blaff, Rand0max, Atlantis
 // @namespace      JVChatPremium
 // @license        MIT
-// @version        0.1.109.v023
+// @version        0.1.112.v023
 // @match          http://*.jeuxvideo.com/forums/42-*
 // @match          https://*.jeuxvideo.com/forums/42-*
 // @match          http://*.jeuxvideo.com/forums/1-*
@@ -450,7 +450,7 @@ label {
     left: 50%;
     color: gray;
     font-weight: bold;
-	opacity: 0.7;
+    opacity: 0.7;
 }
 
 .jvchat-message-deleted .jvchat-delete,
@@ -983,13 +983,13 @@ hr.jvchat-ruler:first-of-type {
 }
 
 .jvchat-night-mode .text-enrichi-forum .nested-quote-toggle-box::after {
-	background-color: #484c52!important;
-	border-color: #737373!important;
-	color: #737373!important;
+    background-color: #484c52!important;
+    border-color: #737373!important;
+    color: #737373!important;
 }
 
 .jvchat-night-mode .text-enrichi-forum .nested-quote-toggle-box:hover::before {
-	color: #cbcdce!important;
+    color: #cbcdce!important;
 }
 
 .jvchat-night-mode .bloc-spoil-jv .contenu-spoil {
@@ -1209,6 +1209,7 @@ let PANEL = `
 let freshHash = undefined;
 let freshDeletionHash = undefined;
 let freshForm = undefined;
+let freshpayload = undefined;
 let firstMessageId = undefined;
 let firstMessageDate = undefined;
 let lastEditionTime = {};  // id => [timestamp, edition, deleted]
@@ -1852,16 +1853,34 @@ function getMessageIdFromUrl(messageUrl) {
     return match?.groups?.messageid;
 }
 
+function getPayload(doc) {
+    const m = [...doc.scripts]
+      .map(s => s.textContent.match(/forumsAppPayload\s*=\s*["']([^"']+)["']/))
+      .find(Boolean);
+    return m ? JSON.parse(atob(m[1])) : undefined;
+}
+
+
 function postMessage() {
-    if (freshForm === undefined) {
+    /*
+    if (freshpayload === undefined) {
         addAlertbox("danger", "Impossible de poster le message, aucun formulaire trouvé");
         return;
     }
+    */
 
     let textarea = document.getElementById("message_topic");
+    let formData = {
+        topicId: freshpayload.topicId,
+        forumId: freshpayload.forumId,
+        group: 1,
+        ajax_hash: freshpayload.ajaxToken
+    };
+    for (const key in freshpayload.formSession) {
+      formData[key] = freshpayload.formSession[key];
+    }
+    formData["text"] = textarea.value;
 
-    let formData = serializeForm(freshForm);
-    formData["message_topic"] = textarea.value;
     let formulaire = document.getElementById("bloc-formulaire-forum");
 
     formulaire.classList.add("jvchat-disabled-form");
@@ -1917,18 +1936,19 @@ function postMessage() {
     }
 
     postingMessage = true;
-    request("POST", document.URL, onSuccess, onError, onTimeout, makeFormData(formData), false, timeout, false);
+    let url = "https://www.jeuxvideo.com/forums/message/add";
+
+    request("POST", url, onSuccess, onError, onTimeout, makeFormData(formData), true, timeout, false);
 }
 
 function editMessage(bloc) {
+    let messageId = bloc.getAttribute("jvchat-id");
     let textarea = bloc.getElementsByClassName("jvchat-edition-textarea")[0];
 
     let blocEdition = bloc.getElementsByClassName("jvchat-edition")[0];
     let formData = JSON.parse(blocEdition.getAttribute("data-form"));
-    formData["message_topic"] = textarea.value;
-    formData["id_message"] = bloc.getAttribute("jvchat-id");
+    formData["text"] = textarea.value;
     formData["ajax_hash"] = freshHash;
-    formData["action"] = "post";
     let edition = bloc.getElementsByClassName("jvchat-edition")[0];
 
     edition.classList.add("jvchat-disabled-form");
@@ -1938,28 +1958,47 @@ function editMessage(bloc) {
 
     function onSuccess(res) {
         edition.classList.remove("jvchat-disabled-form");
-        if (res['reset_form']) {
-            let reset = document.createElement("html");
-            reset.innerHTML = res["hidden_reset"];
-            let resetData = serializeForm(reset);
-            for (let key in resetData) {
-                formData[key] = resetData[key];
+        //mettre à jour fs form
+        //clean ancien fs
+        for (let key in formData) if (key.startsWith('fs_')) delete formData[key];
+        //ajouter fs edit response
+        if (res.formSession) {
+            for (const key in res.formSession) {
+                if (key.startsWith('fs_')) {
+                    formData[key] = res.formSession[key];
+                }
             }
             blocEdition.setAttribute("data-form", JSON.stringify(formData));
         }
-
+    
         textarea.removeAttribute("disabled");
-        if (res.erreur.length > 0) {
-            for (let err of res.erreur) {
-                addAlertbox("danger", err);
-            }
+    
+        if (res.errors && Object.keys(res.errors).length > 0) {
+            const firstKey = Array.isArray(res.errors) ? "0" : Object.keys(res.errors)[0];
+            addAlertbox("danger", res.errors[firstKey]);
             return;
         }
-        let dom = document.createElement("html");
-        dom.innerHTML = res["html"];
-        let message = getMessages(dom)[0];
-        addMessages([message], true, timestamp, false);
+
+        const wrapper = `<div class="txt-msg text-enrichi-forum">${res.html}</div>`;
+        const contentDiv = bloc.querySelector(".jvchat-content");
+        const editionDiv = bloc.querySelector(".jvchat-edition");
+        contentDiv.innerHTML = wrapper;
+
+
+        //parsing_message
+        fixMessage(contentDiv);
+        detectMosaic(contentDiv);
+        improveImages(contentDiv);
+
+        contentDiv.classList.remove("jvchat-hide");
+        editionDiv.classList.add("jvchat-hide");
+        forceUpdate();
+
+        const eventDetail = { 'detail': { id: messageId, isEdit: true, newHtml: res.html } };
+        const customEvent = new CustomEvent('jvchat:newmessage', eventDetail);
+        dispatchEvent(customEvent);
     }
+
 
     function onError(err, _) {
         addAlertbox("danger", err);
@@ -1973,7 +2012,7 @@ function editMessage(bloc) {
         textarea.removeAttribute("disabled");
     }
 
-    let url = "https://www.jeuxvideo.com/forums/ajax_edit_message.php";
+    let url = "https://www.jeuxvideo.com/forums/message/edit";
 
     request("POST", url, onSuccess, onError, onTimeout, makeFormData(formData), true, 20000, false);
 }
@@ -1988,19 +2027,34 @@ function requestEdit(bloc) {
 
     function onSuccess(res) {
         contentClasses.remove("disabled-content");
-        if (res.erreur.length > 0) {
-            for (let err of res.erreur) {
+
+        let errors = res.erreur || res.errors || [];
+        if (errors.length > 0) {
+            for (let err of errors) {
                 addAlertbox("danger", err);
             }
             return;
         }
+        // ancienne logique paser le dom
+        /*
         let dom = document.createElement("html");
         dom.innerHTML = res["html"];
         let textarea = dom.getElementsByTagName("textarea")[0]
         let txt = textarea.value;
         textarea.parentElement.removeChild(textarea);
         let form = dom.getElementsByTagName("form")[0];
-        let formData = serializeForm(form);
+        let formData = serializeForm(form); // on prend direct dans le json
+        */
+        //reponse dans le json
+        let txt = decodeHtmlEntities(res.jvcode || "");
+        let formData = res.edit_form_session || {};
+        formData["messageId"] = bloc.getAttribute("jvchat-id");
+        formData["ajax_hash"] = freshHash;
+        formData["topicId"] = res.topicId;
+        formData["forumId"] = res.forumId;
+        formData["group"] = "1";
+        formData["text"] = txt;
+
         let editionBloc = bloc.getElementsByClassName("jvchat-edition")[0];
         editionBloc.setAttribute("data-form", JSON.stringify(formData));
         let height = computeHeight(countLines(txt));
@@ -2022,6 +2076,12 @@ function requestEdit(bloc) {
     function onTimeout(err) {
         addAlertbox("warning", err);
         contentClasses.remove("disabled-content");
+    }
+
+    function decodeHtmlEntities(str) {
+        const txt = document.createElement("textarea");
+        txt.innerHTML = str;
+        return txt.value;
     }
 
     let id = bloc.getAttribute("jvchat-id");
@@ -2647,7 +2707,8 @@ function triggerJVChat() {
 
     freshHash = getHash(document);
     freshDeletionHash = getDeletionHash(document);
-    freshForm = getForm(document);
+    //freshForm = getForm(document);
+    freshpayload = getPayload(document);
 
     favicon = makeFavicon();
 
@@ -2925,9 +2986,16 @@ function parsePage(res, requestTimestamp) {
         removeFixedAlert("Le topic ne retourne plus d'erreur", true);
     }
 
+    /*
     let form = getForm(res);
     if (form !== undefined) {
         freshForm = form;
+    }
+    */
+
+    let payload = getPayload(res);
+    if (payload !== undefined) {
+        freshpayload = payload;
     }
 
     let hash = getHash(res);
